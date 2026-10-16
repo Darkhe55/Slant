@@ -11,7 +11,8 @@ import {
   invertMove,
   serializeState,
 } from './state'
-import { clueCount, getPuzzle, puzzles, randomPuzzle } from './puzzles'
+import { clueCount, puzzles } from './puzzles'
+import { loadSavedPuzzles, savePuzzleToLibrary } from './library'
 import { cellCenter, clientToViewBox, hitTestCell, metricsFor, renderBoard, updateFlash, updateHover } from './render'
 import { validate } from './validate'
 import { countSolutions } from './solver'
@@ -111,6 +112,7 @@ app.innerHTML = `
         <div class="custom-grid" id="custom-grid"></div>
         <div class="toolbar" style="margin-top:10px">
           <button class="btn primary" id="custom-apply" type="button">载入题板</button>
+          <button class="btn" id="custom-save" type="button">保存到题库</button>
           <button class="btn" id="custom-unique" type="button">唯一解校验</button>
           <button class="btn danger" id="custom-close" type="button">关闭</button>
         </div>
@@ -161,9 +163,26 @@ function setStatus(text: string, tone: 'ok' | 'bad' | 'solving' | '' = '') {
   el.className = 'status' + (tone ? ` ${tone}` : '')
 }
 
+/** 内置题库 + 本地保存的自定义题 */
+let library: Puzzle[] = [...puzzles]
+
+function refreshLibrary(): void {
+  library = [...loadSavedPuzzles(), ...puzzles]
+}
+
+/** 稳定排序：保存的自定义题在前，内置题保持原顺序 */
+function sortedLibrary(): Puzzle[] {
+  const rank = (p: Puzzle) => (p.difficulty === 'custom' ? 0 : 1)
+  return [...library].sort((a, b) => rank(a) - rank(b))
+}
+
+function findPuzzle(id: string): Puzzle | undefined {
+  return library.find((p) => p.id === id)
+}
+
 function renderPuzzleList() {
   const list = $('#puzzle-list')
-  list.innerHTML = puzzles
+  list.innerHTML = sortedLibrary()
     .map((p) => {
       const active = session?.puzzle.id === p.id ? ' active' : ''
       return `
@@ -178,7 +197,7 @@ function renderPuzzleList() {
   list.querySelectorAll<HTMLButtonElement>('.puzzle-item').forEach((btn) => {
     btn.addEventListener('click', () => {
       const id = btn.dataset.id
-      const p = id ? getPuzzle(id) : undefined
+      const p = id ? findPuzzle(id) : undefined
       if (p) selectPuzzle(p)
     })
   })
@@ -469,8 +488,10 @@ function selectPuzzle(puzzle: Puzzle): void {
 }
 
 function pickRandomPuzzle(): void {
-  const p = randomPuzzle(session?.puzzle.id)
-  selectPuzzle(p)
+  const avoidId = session?.puzzle.id
+  const pool = avoidId ? library.filter((p) => p.id !== avoidId) : library
+  const list = pool.length ? pool : library
+  selectPuzzle(list[Math.floor(Math.random() * list.length)]!)
 }
 
 /* ———————————————————— 悬停预览 ———————————————————— */
@@ -848,8 +869,33 @@ function loadCustomPuzzle(): void {
     clues: customClues.slice(),
     difficulty: 'custom',
   }
-  closeCustomEditor()
+  // 注意：不自动关闭编辑器——题板保持展开，除非手动点「关闭」（或按 Esc）
   selectPuzzle(puzzle)
+}
+
+/** 把当前题板存进 localStorage 题库（不关闭编辑器，可继续改或再存） */
+function saveCustomPuzzle(): void {
+  readCustomSize()
+  if (customClues.length !== (customW + 1) * (customH + 1)) {
+    customMsg('请先生成网格并填好数字。', 'bad')
+    return
+  }
+  const now = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const stamp = `${pad(now.getMonth() + 1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}`
+  const puzzle: Puzzle = {
+    id: `custom-${customW}x${customH}-${Date.now().toString(36)}`,
+    name: `自定义 · ${customW}×${customH} · ${stamp}`,
+    width: customW,
+    height: customH,
+    clues: customClues.slice(),
+    difficulty: 'custom',
+  }
+  savePuzzleToLibrary(puzzle)
+  refreshLibrary()
+  renderPuzzleList()
+  customMsg(`已保存到题库：「${puzzle.name}」，下次启动仍可选用。`, 'ok')
+  setStatus(`自定义题已存入题库「${puzzle.name}」。`)
 }
 
 function checkCustomUnique(): void {
@@ -1034,12 +1080,15 @@ $('#zoom-out').addEventListener('click', () => setZoom(zoom / 1.15))
 $('#zoom-reset').addEventListener('click', resetView)
 $('#custom-regen').addEventListener('click', regenCustomGrid)
 $('#custom-apply').addEventListener('click', loadCustomPuzzle)
+$('#custom-save').addEventListener('click', saveCustomPuzzle)
 $('#custom-unique').addEventListener('click', checkCustomUnique)
 $('#custom-close').addEventListener('click', closeCustomEditor)
 
 bindBoard()
 
 /* ———————————————————— 启动 ———————————————————— */
+
+refreshLibrary()
 
 selectPuzzle(puzzles[0]!)
 setStatus(`已载入「${puzzles[0]!.name}」。左键在格子里画对角线。`)
