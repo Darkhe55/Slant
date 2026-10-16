@@ -1,0 +1,7 @@
+node_modules/
+dist/
+output/
+scripts/check.mjs
+scripts/gen-puzzles.mjs
+scripts/logic-test.mjs
+scripts/tmp-rule3.mjs

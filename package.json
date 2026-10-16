@@ -1,0 +1,22 @@
+{
+  "name": "xiexian-gokigen-naname",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "gen": "esbuild scripts/gen-puzzles.mts --bundle --format=esm --platform=node --outfile=scripts/gen-puzzles.mjs && node scripts/gen-puzzles.mjs",
+    "check": "esbuild scripts/check.mts --bundle --format=esm --platform=node --outfile=scripts/check.mjs && node scripts/check.mjs",
+    "logic-test": "esbuild scripts/logic-test.mts --bundle --format=esm --platform=node --outfile=scripts/logic-test.mjs && node scripts/logic-test.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.64.1",
+    "typescript": "^5.9.3",
+    "vite": "^6.4.4"
+  },
+  "allowScripts": {
+    "esbuild@0.25.12": true
+  }
+}
