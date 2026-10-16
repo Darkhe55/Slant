@@ -451,8 +451,21 @@ button.btn:disabled {
   color: transparent;
 }
 
+.custom-cell.selected {
+  outline: 2px solid var(--diag);
+  outline-offset: -1px;
+  background: #e7f2ec;
+  position: relative;
+  z-index: 1;
+}
+
 .custom-cell:hover {
   border-color: var(--diag);
+}
+
+.custom-grid:focus {
+  outline: 2px solid rgba(31, 111, 92, 0.35);
+  outline-offset: 2px;
 }
 
 .custom-msg {

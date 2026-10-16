@@ -107,7 +107,7 @@ app.innerHTML = `
           <label>高 <input id="custom-h" type="number" min="2" max="12" value="5" /></label>
           <button class="btn" id="custom-regen" type="button">生成网格</button>
         </div>
-        <div class="custom-hint">点击顶点循环：空 → 0 → 1 → 2 → 3 → 4 → 空</div>
+        <div class="custom-hint">点击顶点循环：空 → 0 → 1 → 2 → 3 → 4 → 空 ｜ 键盘：方向键移动，0–4 填数，. / 退格清空，Enter / Tab 下一格</div>
         <div class="custom-grid" id="custom-grid"></div>
         <div class="toolbar" style="margin-top:10px">
           <button class="btn primary" id="custom-apply" type="button">载入题板</button>
@@ -730,6 +730,9 @@ function updateZoomLabel(): void {
 let customW = 5
 let customH = 5
 let customClues: VertexNumber[] = new Array<VertexNumber>(36).fill(null)
+/** 键盘光标所在顶点（0..W, 0..H） */
+let customCursorX = 0
+let customCursorY = 0
 
 function customMsg(text: string, tone: 'ok' | 'bad' | '' = ''): void {
   const el = $('#custom-msg')
@@ -741,6 +744,39 @@ function customCellIndex(px: number, py: number): number {
   return py * (customW + 1) + px
 }
 
+function customEditorOpen(): boolean {
+  return !$('#custom-editor').hidden
+}
+
+/** 直接改某个顶点的数字，只更新对应按钮，不重绘（保住焦点） */
+function setCustomClue(px: number, py: number, value: VertexNumber): void {
+  const i = customCellIndex(px, py)
+  customClues[i] = value
+  const btn = document.querySelector<HTMLButtonElement>(
+    `.custom-cell[data-px="${px}"][data-py="${py}"]`,
+  )
+  if (btn) {
+    btn.textContent = value === null ? '' : String(value)
+    btn.classList.toggle('empty', value === null)
+  }
+}
+
+/** 移动键盘光标到指定顶点（自动夹在网格范围内） */
+function selectCustomVertex(px: number, py: number): void {
+  customCursorX = Math.max(0, Math.min(customW, px))
+  customCursorY = Math.max(0, Math.min(customH, py))
+  document.querySelectorAll<HTMLElement>('.custom-cell').forEach((el) => {
+    el.classList.toggle(
+      'selected',
+      Number(el.dataset.px) === customCursorX && Number(el.dataset.py) === customCursorY,
+    )
+  })
+  const btn = document.querySelector<HTMLButtonElement>(
+    `.custom-cell[data-px="${customCursorX}"][data-py="${customCursorY}"]`,
+  )
+  btn?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+}
+
 function renderCustomGrid(): void {
   const grid = $('#custom-grid')
   grid.style.gridTemplateColumns = `repeat(${customW + 1}, 34px)`
@@ -749,20 +785,24 @@ function renderCustomGrid(): void {
     for (let px = 0; px <= customW; px++) {
       const v = customClues[customCellIndex(px, py)]
       const label = v === null || v === undefined ? '' : String(v)
+      const sel = px === customCursorX && py === customCursorY ? ' selected' : ''
       parts.push(
-        `<button class="custom-cell${v === null ? ' empty' : ''}" type="button" data-px="${px}" data-py="${py}">${label}</button>`,
+        `<button class="custom-cell${v === null ? ' empty' : ''}${sel}" type="button" data-px="${px}" data-py="${py}">${label}</button>`,
       )
     }
   }
   grid.innerHTML = parts.join('')
+  grid.tabIndex = 0
   grid.querySelectorAll<HTMLButtonElement>('.custom-cell').forEach((btn) => {
     btn.addEventListener('click', () => {
       const px = Number(btn.dataset.px)
       const py = Number(btn.dataset.py)
+      selectCustomVertex(px, py)
       const i = customCellIndex(px, py)
       const cur = customClues[i] ?? null
       customClues[i] = cur === null ? 0 : cur === 4 ? null : ((cur + 1) as VertexNumber)
       renderCustomGrid()
+      grid.focus({ preventScroll: true })
     })
   })
 }
@@ -775,16 +815,23 @@ function readCustomSize(): void {
 function regenCustomGrid(): void {
   readCustomSize()
   customClues = new Array<VertexNumber>((customW + 1) * (customH + 1)).fill(null)
+  customCursorX = 0
+  customCursorY = 0
   renderCustomGrid()
   customMsg(`已生成 ${customW}×${customH} 网格，共 ${(customW + 1) * (customH + 1)} 个顶点。`)
+  $('#custom-grid').focus({ preventScroll: true })
 }
 
 function openCustomEditor(): void {
   $('#custom-editor').hidden = false
   readCustomSize()
   customClues = new Array<VertexNumber>((customW + 1) * (customH + 1)).fill(null)
+  customCursorX = 0
+  customCursorY = 0
   renderCustomGrid()
-  customMsg('点击顶点放数字，然后「载入题板」。')
+  customMsg('键盘：方向键移动 · 0–4 填数 · . / 退格清空 · Enter 下一格 · Esc 关闭')
+  // 焦点进网格，便于直接打字
+  $('#custom-grid').focus({ preventScroll: true })
 }
 
 function closeCustomEditor(): void {
@@ -864,7 +911,8 @@ function toggleMute(): void {
 }
 
 function setButtonsDisabled(disabled: boolean): void {
-  for (const id of ['btn-check', 'btn-undo', 'btn-redo', 'btn-hint', 'btn-logic', 'btn-solve', 'btn-clear'] as const) {
+  // 注意：不禁 btn-logic —— 播放中要保留「停止演示」的入口
+  for (const id of ['btn-check', 'btn-undo', 'btn-redo', 'btn-hint', 'btn-solve', 'btn-clear'] as const) {
     const el = document.querySelector<HTMLButtonElement>(`#${id}`)
     if (el) el.disabled = disabled
   }
@@ -878,6 +926,67 @@ window.addEventListener('keydown', (e) => {
   const target = e.target as HTMLElement | null
   if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return
   const k = e.key.toLowerCase()
+
+  // —— 自定义题板键盘录入（编辑器打开时优先于全局快捷键）——
+  if (customEditorOpen()) {
+    // 0–4 填数并右移一格
+    if (k >= '0' && k <= '4') {
+      e.preventDefault()
+      setCustomClue(customCursorX, customCursorY, Number(k) as VertexNumber)
+      selectCustomVertex(customCursorX + 1, customCursorY)
+      return
+    }
+    // . / 退格 / Delete / 空格 清空（退格左移，其余右移）
+    if (k === '.' || k === 'backspace' || k === 'delete' || k === ' ') {
+      e.preventDefault()
+      setCustomClue(customCursorX, customCursorY, null)
+      if (k === 'backspace') selectCustomVertex(customCursorX - 1, customCursorY)
+      else selectCustomVertex(customCursorX + 1, customCursorY)
+      return
+    }
+    if (k === 'arrowleft') {
+      e.preventDefault()
+      selectCustomVertex(customCursorX - 1, customCursorY)
+      return
+    }
+    if (k === 'arrowright') {
+      e.preventDefault()
+      selectCustomVertex(customCursorX + 1, customCursorY)
+      return
+    }
+    if (k === 'arrowup') {
+      e.preventDefault()
+      selectCustomVertex(customCursorX, customCursorY - 1)
+      return
+    }
+    if (k === 'arrowdown') {
+      e.preventDefault()
+      selectCustomVertex(customCursorX, customCursorY + 1)
+      return
+    }
+    if (k === 'enter' || k === 'tab') {
+      e.preventDefault()
+      if (e.shiftKey) selectCustomVertex(customCursorX - 1, customCursorY)
+      else selectCustomVertex(customCursorX + 1, customCursorY)
+      return
+    }
+    if (k === 'home') {
+      e.preventDefault()
+      selectCustomVertex(0, customCursorY)
+      return
+    }
+    if (k === 'end') {
+      e.preventDefault()
+      selectCustomVertex(customW, customCursorY)
+      return
+    }
+    if (k === 'escape') {
+      e.preventDefault()
+      closeCustomEditor()
+      return
+    }
+  }
+
   if (k === 'z' && !e.shiftKey) {
     e.preventDefault()
     undo()

@@ -269,28 +269,28 @@ function touchingDir(cx: number, cy: number, px: number, py: number): CellState 
   return CS.Backslash // 右下
 }
 
+/** 顶点四邻的格子，带「归属顶点」标记 */
+function cellsOfVertex(vx: number, vy: number): Array<[number, number, number, number]> {
+  return [
+    [vx - 1, vy - 1, vx, vy],
+    [vx, vy - 1, vx, vy],
+    [vx - 1, vy, vx, vy],
+    [vx, vy, vx, vy],
+  ]
+}
+
 /**
- * 相邻同数字顶点对的四个「非公共格」。
- * 公共格 = 共享 V—Q 那条边的两格；其余四格各只挨着 V 或 Q 之一。
+ * 相邻顶点对的四个「非公共格」：V 的四格 ∪ Q 的四格 − 公共格（共享 V—Q 那条边的两格）。
+ * 用集合运算写，避免手算坐标时差一格。
  * 返回 [格子x, 格子y, 归属顶点x, 归属顶点y]
  */
 function nonCommonCells(px: number, py: number, qx: number, qy: number) {
-  if (qy === py) {
-    // 水平相邻 V=(px,py) Q=(px+1,py)
-    return [
-      [px - 1, py - 1, px, py],
-      [px - 1, py, px, py],
-      [qx + 1, qy - 1, qx, qy],
-      [qx + 1, qy, qx, qy],
-    ] as const
-  }
-  // 垂直相邻 V=(px,py) Q=(px,py+1)
-  return [
-    [px - 1, py - 1, px, py],
-    [px, py - 1, px, py],
-    [qx - 1, qy + 1, qx, qy],
-    [qx, qy + 1, qx, qy],
-  ] as const
+  const vCells = cellsOfVertex(px, py)
+  const qCells = cellsOfVertex(qx, qy)
+  const key = (c: readonly number[]) => `${c[0]},${c[1]}`
+  const qSet = new Set(qCells.map(key))
+  const vSet = new Set(vCells.map(key))
+  return [...vCells.filter((c) => !qSet.has(key(c))), ...qCells.filter((c) => !vSet.has(key(c)))]
 }
 
 /**
@@ -301,15 +301,8 @@ function nonCommonCells(px: number, py: number, qx: number, qy: number) {
  * 垂直对的公共格在第 px-1 与第 px 列 → 需要 1 ≤ px ≤ w-1。
  * （顶点贴在墙边时只剩一个公共格，推不出矛盾，规则不适用。）
  */
-function pairHasBothCommonCells(
-  w: number,
-  h: number,
-  px: number,
-  py: number,
-  qx: number,
-  qy: number,
-): boolean {
-  return qy === py ? py >= 1 && py <= h - 1 : px >= 1 && px <= w - 1
+function pairHasBothCommonCells(h: number, w: number, py: number, px: number, horizontal: boolean): boolean {
+  return horizontal ? py >= 1 && py <= h - 1 : px >= 1 && px <= w - 1
 }
 
 /**
@@ -342,8 +335,9 @@ const ruleAdjacentPair: RuleFn = (ctx) => {
       ] as const) {
         if (qx > w || qy > h) continue
         if (ctx.clues[clueIndex(w, qx, qy)] !== n) continue
+        const horizontal = qy === py
         // 墙边前置条件：两个公共格都得在，否则推不出矛盾
-        if (!pairHasBothCommonCells(w, h, px, py, qx, qy)) continue
+        if (!pairHasBothCommonCells(h, w, py, px, horizontal)) continue
 
         for (const [cx, cy, vx, vy] of nonCommonCells(px, py, qx, qy)) {
           if (cx < 0 || cy < 0 || cx >= w || cy >= h) continue // 墙边：格子不存在
