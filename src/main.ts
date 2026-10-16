@@ -83,10 +83,10 @@ app.innerHTML = `
   <header class="topbar">
     <div class="brand">
       <h1>斜线</h1>
-      <p>Gokigen Naname · 每格画一条对角线，数字等于经过该顶点的斜线条数，且不能成环</p>
+      <p>Gokigen Naname · 每格填入一条对角线，有两种选择，数字表示该点连接对角线数量，所有连线不能构成环路</p>
     </div>
     <div class="brand">
-      <p style="margin:0">左键循环 \ → / → 空 · 右键反向 · 按住拖拽可连续涂</p>
+      <p style="margin:0">左右键将格子内容循环切换· 长按拖动可以连续填入</p>
     </div>
   </header>
 
@@ -149,8 +149,6 @@ app.innerHTML = `
       <div id="board"></div>
     </main>
   </div>
-
-  <p class="footer-note">顶点数字 = 经过它的斜线条数（0–4）· 所有斜线不得闭合成环</p>
 `
 
 let session: Session | null = null
@@ -201,7 +199,7 @@ function renderBoardOnly() {
   if (svg) {
     const m = metricsFor(session.puzzle)
     if (hoverCell !== null) {
-      updateHover(svg, m, hoverCell, cycleCell(cellValue(session.state, hoverCell), 1))
+      updateHover(svg, m, hoverCell)
     }
     if (flashCell !== null) updateFlash(svg, m, flashCell)
   }
@@ -489,7 +487,7 @@ let hoverCell: number | null = null
 function clearHover(): void {
   hoverCell = null
   const svg = currentSvg()
-  if (svg && session) updateHover(svg, metricsFor(session.puzzle), null, CS.Unknown)
+  if (svg && session) updateHover(svg, metricsFor(session.puzzle), null)
 }
 
 function updateHoverAt(clientX: number, clientY: number): void {
@@ -502,9 +500,7 @@ function updateHoverAt(clientX: number, clientY: number): void {
   const cell = hitTestCell(m, session.puzzle, vb.x, vb.y)
   if (cell === hoverCell) return
   hoverCell = cell
-  const dir =
-    cell === null ? CS.Unknown : cycleCell(cellValue(session.state, cell), 1)
-  updateHover(svg, m, cell, dir)
+  updateHover(svg, m, cell)
 }
 
 /* ———————————————————— 手势：点击 / 拖拽涂写 ———————————————————— */

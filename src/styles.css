@@ -341,12 +341,6 @@ button.btn:disabled {
   stroke: var(--error);
 }
 
-.board-svg .diag.ghost {
-  stroke: var(--diag);
-  opacity: 0.32;
-  stroke-dasharray: 7 5;
-}
-
 .board-svg .clue {
   fill: var(--num);
   font-family: var(--font);
@@ -373,13 +367,6 @@ button.btn:disabled {
   stroke: var(--error);
   opacity: 0.9;
   pointer-events: none;
-}
-
-.footer-note {
-  margin-top: 18px;
-  color: var(--ink-soft);
-  font-size: 12px;
-  text-align: center;
 }
 
 /* ——— 自定义题板 ——— */

@@ -1,4 +1,4 @@
-import type { CellState, GameState, Puzzle, ValidationResult } from './types'
+import type { GameState, Puzzle, ValidationResult } from './types'
 import { CellState as CS } from './types'
 import { cellIndex, cellValue, clueIndex } from './state'
 import { cellEdgeEndpoints } from './validate'
@@ -79,7 +79,7 @@ export function renderBoard(
   const swGuide = 1.6 * m.k
   const rPoint = 3.2 * m.k
   const numSize = 21 * m.k
-  const errR = 9 * m.k
+  const errR = 11 * m.k
   const inset = 2 * m.k
 
   const badVertexSet = new Set(result.badVertices.map((v) => v.py * (w + 1) + v.px))
@@ -171,37 +171,21 @@ export function renderBoard(
 
 /* ———————————————————— 悬停预览 ———————————————————— */
 
-/** 悬停层内容：格子高亮 + 这一格即将落下的对角线预览 */
-export function hoverMarkup(m: BoardMetrics, cell: number | null, dir: CellState): string {
+/** 悬停层内容：只显示格子高亮背景，不预览下一状态 */
+export function hoverMarkup(m: BoardMetrics, cell: number | null): string {
   if (cell === null) return ''
   const cx = cell % m.width
   const cy = Math.floor(cell / m.width)
   const { x, y } = cellCenter(m, cx, cy)
   const inset = 2 * m.k
-  const parts: string[] = [
-    `<rect class="cell-hover" x="${x - m.cell / 2 + inset}" y="${y - m.cell / 2 + inset}" width="${m.cell - inset * 2}" height="${m.cell - inset * 2}" rx="${8 * m.k}" />`,
-  ]
-  if (dir !== CS.Unknown) {
-    const e = cellEdgeEndpoints(m.width, cx, cy, dir)
-    const p1 = pointXY(m, e.a % (m.width + 1), Math.floor(e.a / (m.width + 1)))
-    const p2 = pointXY(m, e.b % (m.width + 1), Math.floor(e.b / (m.width + 1)))
-    parts.push(
-      `<line class="diag ghost" x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}" stroke-width="${6 * m.k}" />`,
-    )
-  }
-  return parts.join('\n')
+  return `<rect class="cell-hover" x="${x - m.cell / 2 + inset}" y="${y - m.cell / 2 + inset}" width="${m.cell - inset * 2}" height="${m.cell - inset * 2}" rx="${8 * m.k}" />`
 }
 
 /** 只更新悬停层，不重建整张 SVG（保指针事件连续） */
-export function updateHover(
-  svg: SVGSVGElement,
-  m: BoardMetrics,
-  cell: number | null,
-  dir: CellState,
-): void {
+export function updateHover(svg: SVGSVGElement, m: BoardMetrics, cell: number | null): void {
   const layer = svg.querySelector('.hover-layer')
   if (!layer) return
-  layer.innerHTML = hoverMarkup(m, cell, dir)
+  layer.innerHTML = hoverMarkup(m, cell)
 }
 
 /** 逻辑解题演示时「正在推理」的格子高亮 */
