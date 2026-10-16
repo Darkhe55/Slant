@@ -259,7 +259,7 @@ const ruleLoopAvoidance: RuleFn = (ctx) => {
   return steps
 }
 
-/* ———————————————————— 规则 3/4：相邻的 1 与 3 ———————————————————— */
+/* ———————————————————— 规则 3/4：相邻数字对的非公共格推导 ———————————————————— */
 
 /** 格子 (cx,cy) 取哪个方向，对角线才会连到顶点 (px,py) */
 function touchingDir(cx: number, cy: number, px: number, py: number): CellState {
@@ -280,44 +280,40 @@ function cellsOfVertex(vx: number, vy: number): Array<[number, number, number, n
 }
 
 /**
- * 相邻顶点对的四个「非公共格」：V 的四格 ∪ Q 的四格 − 公共格（共享 V—Q 那条边的两格）。
- * 用集合运算写，避免手算坐标时差一格。
- * 返回 [格子x, 格子y, 归属顶点x, 归属顶点y]
+ * 相邻顶点对 V—Q 的格子分组（只收盘面内真实存在的格子）：
+ *   g         = 公共格数（两个对角端点正是 V 和 Q 的格子，每格必连向二者之一）
+ *   nonCommon = 非公共格 [cx, cy, 归属顶点x, 归属顶点y]
+ * 贴墙时自然变少：顶边/底边的水平对只剩 1 个公共格，墙边顶点可能只剩 0–2 个非公共格。
  */
-function nonCommonCells(px: number, py: number, qx: number, qy: number) {
-  const vCells = cellsOfVertex(px, py)
-  const qCells = cellsOfVertex(qx, qy)
+function pairCells(w: number, h: number, px: number, py: number, qx: number, qy: number) {
+  const inBoard = (c: readonly number[]) => c[0] >= 0 && c[1] >= 0 && c[0] < w && c[1] < h
+  const vCells = cellsOfVertex(px, py).filter(inBoard)
+  const qCells = cellsOfVertex(qx, qy).filter(inBoard)
   const key = (c: readonly number[]) => `${c[0]},${c[1]}`
   const qSet = new Set(qCells.map(key))
   const vSet = new Set(vCells.map(key))
-  return [...vCells.filter((c) => !qSet.has(key(c))), ...qCells.filter((c) => !vSet.has(key(c)))]
+  const vOnly = vCells.filter((c) => !qSet.has(key(c)))
+  const qOnly = qCells.filter((c) => !vSet.has(key(c)))
+  return { g: vCells.length - vOnly.length, nonCommon: [...vOnly, ...qOnly] }
 }
 
 /**
- * 规则成立的前提：**两个公共格都存在**。
- * 公共格的两个对角端点正是 V 和 Q，所以每格必然连到其中之一——
- * 证明里要用到的就是「两个公共格都连到另一边」这一手。
- * 水平对的公共格在第 py-1 与第 py 行 → 需要 1 ≤ py ≤ h-1；
- * 垂直对的公共格在第 px-1 与第 px 列 → 需要 1 ≤ px ≤ w-1。
- * （顶点贴在墙边时只剩一个公共格，推不出矛盾，规则不适用。）
- */
-function pairHasBothCommonCells(h: number, w: number, py: number, px: number, horizontal: boolean): boolean {
-  return horizontal ? py >= 1 && py <= h - 1 : px >= 1 && px <= w - 1
-}
-
-/**
- * 规则 3 · 相邻的两个 1 → 四个非公共格必须**背朝**各自挨着的那个 1。
+ * 规则 3/4 · 相邻数字对的非公共格额度推导（「相邻的 1 / 相邻的 3」的推广）。
  *
- * 证明：设 V、Q 正交相邻且都是 1。每个公共格的两个对角端点正好是 V 和 Q，
- * 所以它必然连到其中之一。若某非公共格连到了 V，V 的额度（1）就用光了，
- * 于是两个公共格都必须避开 V → 都连到 Q → Q 变成 2，矛盾。∎
+ * 设 V、Q 正交相邻，数字 N1、N2，S = N1 + N2。任一完整解都满足恒等式
+ *   S = g +（非公共格连向各自归属顶点的条数）
+ * ——每个公共格必连向 V/Q 之一，每个非公共格至多连向它归属的那个顶点。
+ * 记 c = 已确认相连的非公共格数、b = 已确认相背数、n = 非公共格总数，
+ * g、n 一律按盘面内实际存在的格子代入（贴墙自动弱化）：
  *
- * 规则 4 · 相邻的两个 3 → 四个非公共格必须**连朝**各自挨着的那个 3。
+ *   规则 3（相背）：c + g ≥ S → 连接额度已用光，剩余空格再连就超支 → 全部填相背；
+ *   规则 4（相连）：b = n + g − S（墙内完整时即 b + 2 + S = 8）
+ *                → 相背数把余量吃光，剩余空格必须全部相连才够 S → 全部填相连。
  *
- * 证明：若非公共格避开 V，V 想达到 3 就只能让其余三格全连过来，
- * 于是两个公共格都连 V → 都避开 Q → Q 最多从它的两个非公共格拿到 2 < 3，矛盾。∎
- *
- * 墙边处理：越界的格子直接跳过（墙边顶点本来格子就少，推导自然变弱）。
+ * 特例回归：相邻两个 1（S=2, g=2）→ c ≥ 0 恒成立 → 非公共格全相背；
+ * 相邻两个 3（S=6, g=2, n=4）→ b = 0 即触发 → 非公共格全相连。
+ * 墙边示例：角上相邻两个 1（(0,0)-(1,0)，g=1, n=1）→ b = 0 触发规则 4，
+ * 唯一非公共格必须相连（另一个顶点的额度被它仅有的格子占满）。
  */
 const ruleAdjacentPair: RuleFn = (ctx) => {
   const steps: LogicStep[] = []
@@ -326,35 +322,53 @@ const ruleAdjacentPair: RuleFn = (ctx) => {
 
   for (let py = 0; py <= h; py++) {
     for (let px = 0; px <= w; px++) {
-      const n = ctx.clues[clueIndex(w, px, py)]
-      if (n !== 1 && n !== 3) continue
+      const n1 = ctx.clues[clueIndex(w, px, py)]
+      if (n1 === null || n1 === undefined) continue
 
       for (const [qx, qy] of [
         [px + 1, py],
         [px, py + 1],
       ] as const) {
         if (qx > w || qy > h) continue
-        if (ctx.clues[clueIndex(w, qx, qy)] !== n) continue
-        const horizontal = qy === py
-        // 墙边前置条件：两个公共格都得在，否则推不出矛盾
-        if (!pairHasBothCommonCells(h, w, py, px, horizontal)) continue
+        const n2 = ctx.clues[clueIndex(w, qx, qy)]
+        if (n2 === null || n2 === undefined) continue
+        const s = n1 + n2
 
-        for (const [cx, cy, vx, vy] of nonCommonCells(px, py, qx, qy)) {
-          if (cx < 0 || cy < 0 || cx >= w || cy >= h) continue // 墙边：格子不存在
+        const { g, nonCommon } = pairCells(w, h, px, py, qx, qy)
+        const n = nonCommon.length
+        if (!n) continue
+
+        // 统计非公共格的已确认状态，收集待推空格
+        let connected = 0
+        let away = 0
+        const pending: Array<{ cx: number; cy: number; touch: CellState }> = []
+        for (const [cx, cy, vx, vy] of nonCommon) {
           const touch = touchingDir(cx, cy, vx, vy)
-          const value = n === 1 ? other(touch) : touch
-          if (at(ctx, cx, cy) === value) continue // 已经推过
-          const ruleNo = n === 1 ? 3 : 4
-          const how = n === 1 ? '背朝' : '连朝'
-          steps.push(
-            put(
-              ctx,
-              cx,
-              cy,
-              value,
-              `规则${ruleNo} · 顶点 (${px},${py}) 与 (${qx},${qy}) 是相邻的两个 ${n}：非公共格 (${cx},${cy}) 必须${how}它 → 填 ${sym(value)}`,
-            ),
-          )
+          const v = at(ctx, cx, cy)
+          if (v === touch) connected++
+          else if (v === other(touch)) away++
+          else pending.push({ cx, cy, touch })
+        }
+        if (!pending.length) continue
+
+        const label = `顶点 (${px},${py}) 与 (${qx},${qy}) 是相邻的 ${n1} 和 ${n2}`
+
+        if (connected + g >= s) {
+          // 规则 3：连接额度已用光 → 剩余全部相背
+          const head = `规则3 · ${label}：非公共格已连 ${connected} 条 + 公共格 ${g} 条 ≥ 两数之和 ${s}，剩余 ${pending.length} 格必须相背`
+          for (const p of pending) {
+            const value = other(p.touch)
+            steps.push(put(ctx, p.cx, p.cy, value, `${head} → 填 ${sym(value)}`))
+          }
+          continue
+        }
+
+        if (away === n + g - s) {
+          // 规则 4：相背数把余量吃光 → 剩余全部相连
+          const head = `规则4 · ${label}：非公共格已相背 ${away} 格，必须全部相连才够 ${s} → 剩余 ${pending.length} 格填相连`
+          for (const p of pending) {
+            steps.push(put(ctx, p.cx, p.cy, p.touch, `${head} → 填 ${sym(p.touch)}`))
+          }
         }
       }
     }
@@ -377,8 +391,8 @@ export const RULES: RuleMeta[] = [
     fn: ruleLoopAvoidance,
   },
   {
-    id: 'r3-adjacent-ones',
-    name: '相邻的两个 1：非公共格背朝（连上去会让另一个 1 变 2）',
+    id: 'r3-adjacent-pair',
+    name: '相邻数字对：非公共格额度推导（已连+公共格 ≥ 两数之和 → 其余相背；相背吃光余量 → 其余相连）',
     fn: ruleAdjacentPair,
   },
 ]

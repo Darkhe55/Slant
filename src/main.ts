@@ -257,13 +257,6 @@ function setCells(targets: Array<{ index: number; value: CellState }>): number {
   return n
 }
 
-function toggleCell(index: number, dir: 1 | -1 = 1): void {
-  if (!session) return
-  const cur = cellValue(session.state, index)
-  const next = cycleCell(cur, dir)
-  if (setCells([{ index, value: next }])) playCellFx(index, next !== CS.Unknown)
-}
-
 function undo(): void {
   if (!session) return
   const group = session.undo.pop()
@@ -518,6 +511,33 @@ interface Gesture {
 
 let gesture: Gesture | null = null
 
+/** 按下即开始涂写手势：dir=1 正向循环（左键），-1 反向（右键）；拖动经过的格子沿用同一方向 */
+function startPaint(e: PointerEvent, cell: number, dir: 1 | -1): void {
+  if (!session) return
+  const cur = cellValue(session.state, cell)
+  const paintDir = cycleCell(cur, dir)
+  gesture = {
+    mode: 'paint',
+    paintDir,
+    lastCell: cell,
+    moves: [],
+    startX: e.clientX,
+    startY: e.clientY,
+    moved: false,
+    pointerId: e.pointerId,
+  }
+  const mv = moveFor(cell, paintDir)
+  if (mv) {
+    gesture.moves.push(mv)
+    pushMoves([mv])
+    session.hintCells.delete(cell)
+    refresh()
+    // 落子特效：弦振抖动 + 光晕 + 拨弦音
+    playCellFx(cell, paintDir !== CS.Unknown, true)
+  }
+  hoverCell = cell
+}
+
 function boardPointerDown(e: PointerEvent): void {
   resumeAudio()
   if (!session) return
@@ -541,57 +561,30 @@ function boardPointerDown(e: PointerEvent): void {
     return
   }
 
-  if (e.button === 2) {
+  // 左键 = 正向循环，右键 = 反向循环；两者都支持长按拖动连续填入
+  if (e.button === 0 || e.button === 2) {
     const vb = clientToViewBox(svg, e.clientX, e.clientY)
     if (!vb) return
     const cell = hitTestCell(m, session.puzzle, vb.x, vb.y)
-    if (cell !== null) toggleCell(cell, -1)
-    return
-  }
-
-  if (e.button !== 0) return
-
-  const vb = clientToViewBox(svg, e.clientX, e.clientY)
-  if (!vb) return
-  const cell = hitTestCell(m, session.puzzle, vb.x, vb.y)
-
-  if (cell === null) {
-    // 点在盘面外：左键也当平移用，方便看大图
-    gesture = {
-      mode: 'pan',
-      paintDir: CS.Unknown,
-      lastCell: -1,
-      moves: [],
-      startX: e.clientX,
-      startY: e.clientY,
-      moved: false,
-      pointerId: e.pointerId,
+    if (cell === null) {
+      // 点在盘面外：左键也当平移用，方便看大图；右键无操作
+      if (e.button === 0) {
+        gesture = {
+          mode: 'pan',
+          paintDir: CS.Unknown,
+          lastCell: -1,
+          moves: [],
+          startX: e.clientX,
+          startY: e.clientY,
+          moved: false,
+          pointerId: e.pointerId,
+        }
+      }
+      return
     }
+    startPaint(e, cell, e.button === 2 ? -1 : 1)
     return
   }
-
-  const cur = cellValue(session.state, cell)
-  const paintDir = cycleCell(cur, 1)
-  gesture = {
-    mode: 'paint',
-    paintDir,
-    lastCell: cell,
-    moves: [],
-    startX: e.clientX,
-    startY: e.clientY,
-    moved: false,
-    pointerId: e.pointerId,
-  }
-  const mv = moveFor(cell, paintDir)
-  if (mv) {
-    gesture.moves.push(mv)
-    pushMoves([mv])
-    session.hintCells.delete(cell)
-    refresh()
-    // 落子特效：弦振抖动 + 光晕 + 拨弦音
-    playCellFx(cell, paintDir !== CS.Unknown, true)
-  }
-  hoverCell = cell
 }
 
 function boardPointerMove(e: PointerEvent): void {

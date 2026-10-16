@@ -87,17 +87,33 @@ for (const p of puzzles) {
   )
 }
 
-/* ——— 规则 3 墙边前置：顶点贴墙时只有一个公共格，规则不适用 ——— */
+/* ——— 规则 3/4 墙边：顶边相邻 1 只有 1 个公共格，两条款都不触发，推不出结论 ——— */
 {
   const w = 4, h = 4
   const clues = new Array<VertexNumber>((w + 1) * (h + 1)).fill(null)
   clues[0 * (w + 1) + 1] = 1 // (1,0) 顶边
-  clues[0 * (w + 1) + 2] = 1 // (2,0) 顶边，水平对但 py=0 → 前置条件不满足
+  clues[0 * (w + 1) + 2] = 1 // (2,0) 顶边，水平对但 py=0 → g=1, n=2, S=2，两条款均不触发
   const p: Puzzle = { id: 'r3-wall', name: 'r3w', width: w, height: h, clues, difficulty: 'custom' }
   const plan = planLogicSolve(p)
   const noConclusion = plan.steps.length === 0 && plan.conflicts.length === 0
   if (!noConclusion) fail++
-  console.log(`${noConclusion ? '✓' : '✗'} 规则3 墙边：顶边相邻 1 不触发（只有一个公共格，推不出矛盾），步数=${plan.steps.length}`)
+  console.log(`${noConclusion ? '✓' : '✗'} 规则3/4 墙边：顶边相邻 1 不触发（g=1, n=2, S=2，额度推不出结论），步数=${plan.steps.length}`)
+}
+
+/* ——— 规则 4 墙边新能力：角上相邻两个 1 → 唯一非公共格必须相连 ——— */
+{
+  const w = 4, h = 4
+  const clues = new Array<VertexNumber>((w + 1) * (h + 1)).fill(null)
+  clues[0 * (w + 1) + 0] = 1 // (0,0) 角点，四周只有公共格 (0,0)
+  clues[0 * (w + 1) + 1] = 1 // (1,0) 顶边，与角点水平相邻
+  const p: Puzzle = { id: 'r4-corner', name: 'r4c', width: w, height: h, clues, difficulty: 'custom' }
+  const plan = planLogicSolve(p)
+  const got = new Map(plan.steps.map((s) => [s.cell, s.value]))
+  // 角点 (0,0) 的额度被公共格占满 → Q=(1,0) 只能靠唯一非公共格 (1,0)，必须连朝 Q（Q 是它左上 → \）
+  const cell10 = got.get(0 * w + 1)
+  const good = cell10 === CS.Backslash && plan.conflicts.length === 0
+  if (!good) fail++
+  console.log(`${good ? '✓' : '✗'} 规则4 墙边：角上相邻 1 的非公共格 (1,0) 必须相连 = ${cell10 === CS.Backslash ? '\\' : cell10 === CS.Slash ? '/' : '（无结论）'}`)
 }
 
 /* ——— 规则 4 定向：相邻的两个 3 → 四个非公共格连朝 ——— */
