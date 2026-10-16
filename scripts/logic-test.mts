@@ -1,5 +1,5 @@
 /**
- * 逻辑解谜器测试：看规则 1 在每道题上能推出多少。
+ * 逻辑解谜器测试：看各规则（1-5）在每道题上能推出多少，并做定向单测。
  * 用法：npm run logic-test
  */
 import { puzzles } from '../src/puzzles.ts'
@@ -28,10 +28,13 @@ for (const p of puzzles) {
   const r2 = plan.steps.filter((s) => s.reason.startsWith('规则2')).length
   const r3 = plan.steps.filter((s) => s.reason.startsWith('规则3')).length
   const r4 = plan.steps.filter((s) => s.reason.startsWith('规则4')).length
+  const r5 = plan.steps.filter((s) => s.reason.startsWith('规则5')).length
   console.log(
-    `${p.id.padEnd(16)} ${p.width}x${p.height}  步数=${String(plan.steps.length).padStart(3)} (规则1=${r1} 规则2=${r2} 规则3=${r3} 规则4=${r4})  未定=${String(unknown).padStart(3)}  与参考解一致=${!wrong}  自洽=${legal}  ${plan.ms}ms${plan.conflicts.length ? '  冲突:' + plan.conflicts[0] : ''}`,
+    `${p.id.padEnd(16)} ${p.width}x${p.height}  步数=${String(plan.steps.length).padStart(3)} (规则1=${r1} 规则2=${r2} 规则3=${r3} 规则4=${r4} 规则5=${r5})  未定=${String(unknown).padStart(3)}  与参考解一致=${!wrong}  自洽=${legal}  ${plan.ms}ms${plan.conflicts.length ? '  冲突:' + plan.conflicts[0] : ''}`,
   )
-  for (const s of plan.steps.filter((s) => s.reason.startsWith('规则3') || s.reason.startsWith('规则4')).slice(0, 2)) {
+  for (const s of plan.steps
+    .filter((s) => s.reason.startsWith('规则3') || s.reason.startsWith('规则4') || s.reason.startsWith('规则5'))
+    .slice(0, 2)) {
     console.log(`      · ${s.reason}`)
   }
 }
@@ -140,8 +143,27 @@ for (const p of puzzles) {
   )
 }
 
+/* ——— 规则 5 定向：染色枚举把规则推不动的格子定音 ——— */
+{
+  // 取最大的题（当前 9×9）：规则 1-4 会留下若干推不动的格子，
+  // 规则 5（朝向染色 + 枚举排除）应把它们全部定音，且完整解与参考解一致
+  const p = [...puzzles].sort((a, b) => b.width * b.height - a.width * a.height)[0]!
+  const plan = planLogicSolve(p)
+  const r5 = plan.steps.filter((s) => s.reason.startsWith('规则5'))
+  const good =
+    r5.length > 0 &&
+    plan.complete &&
+    plan.conflicts.length === 0 &&
+    !!p.solution &&
+    plan.cells.every((c, i) => c === p.solution![i])
+  if (!good) fail++
+  console.log(
+    `${good ? '✓' : '✗'} 规则5 定向：${p.width}×${p.height} 染色枚举推出 ${r5.length} 格，完整解与参考解一致${r5[0] ? '  · ' + r5[0].reason : ''}`,
+  )
+}
+
 console.log('')
 if (fail) {  console.log(`${fail} 道题有问题`)
   process.exit(1)
 }
-console.log('规则 1/2/3/4 推得的结论全部自洽（无矛盾、不与参考解冲突）')
+console.log('规则 1-5 推得的结论全部自洽（无矛盾、不与参考解冲突）')

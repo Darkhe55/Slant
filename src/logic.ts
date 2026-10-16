@@ -40,6 +40,7 @@
  */
 import { cellIndex, clueIndex, vertexIncidents } from './state'
 import { cellEdgeEndpoints } from './validate'
+import { enumerateColoredCells } from './coloring'
 import type { CellState, GameState, LogicStep, Puzzle, VertexNumber } from './types'
 import { CellState as CS } from './types'
 
@@ -412,6 +413,29 @@ function initialCells(puzzle: Puzzle, start?: GameState | CellState[]): CellStat
   return empty()
 }
 
+/* ———————————————————— 规则 5：染色枚举（主循环推不动时启用） ———————————————————— */
+
+/**
+ * 规则 5 · 朝向染色枚举（仿数回色块染色）：
+ * 剩余未定格按「同/异色」约束（同一顶点恰一连的相邻格 → 同色，对角格 → 异色）
+ * 用带权并查集传播，再按颜色类枚举整体朝向，用「顶点数字全对 + 不成环」排除非法填法；
+ * 全部合法填法中取值一致的格子即为必然结论。
+ */
+function ruleColoringEnumerate(ctx: RuleCtx): LogicStep[] {
+  const r = enumerateColoredCells(ctx.w, ctx.h, ctx.clues, ctx.cells)
+  if (r.aborted || !r.forced.length) return []
+  const head = `规则5 · 染色枚举：剩余格分属 ${r.classes} 个同/异色类，${r.assignments} 种填法中 ${r.validCount} 种通过「数字全对 + 不成环」校验`
+  return r.forced.map((f) =>
+    put(
+      ctx,
+      f.cx,
+      f.cy,
+      f.value,
+      `${head}，格子 (${f.cx},${f.cy}) 在全部合法填法中取值一致 → 填 ${sym(f.value)}`,
+    ),
+  )
+}
+
 /**
  * 逻辑解谜器入口。
  * @param puzzle 题面
@@ -448,6 +472,14 @@ export function planLogicSolve(puzzle: Puzzle, start?: GameState | CellState[]):
         progress = true
       }
       if (ctx.conflicts.length) break
+    }
+    // 规则 1-4 推不动 → 染色枚举（带权并查集传播 + 按类枚举 + 成环/数字校验排除）
+    if (!progress && !ctx.conflicts.length) {
+      const produced = ruleColoringEnumerate(ctx)
+      if (produced.length) {
+        steps.push(...produced)
+        progress = true
+      }
     }
   }
 
