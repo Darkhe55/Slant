@@ -358,6 +358,14 @@ function sleep(ms: number, token: number): Promise<boolean> {
   return new Promise((resolve) => setTimeout(() => resolve(token === logicToken), ms))
 }
 
+/** 逻辑演示连拍加速的上限档位（与 fx.ts 的连拍上限一致） */
+const LOGIC_STREAK_MAX = 12
+
+/** 连拍数 → 演示间隔：基数 FX_ANIM_MS，每连一拍收敛一档，下限 50ms */
+function logicGapMs(streak: number): number {
+  return Math.max(50, Math.round(FX_ANIM_MS / Math.max(1, streak)))
+}
+
 function setLogicButton(playing: boolean): void {
   $('#btn-logic').textContent = playing ? '停止演示' : '逻辑解题'
 }
@@ -401,7 +409,7 @@ async function runLogicSolver(): Promise<void> {
   setButtonsDisabled(true)
   resetStreak()
   const token = ++logicToken
-  setStatus(`逻辑解题：${plan.steps.length} 步推导，开始演示（再按一次停止）…`, 'solving')
+  setStatus(`逻辑解题：${plan.steps.length} 步推导，开始演示（越推越快，再按一次停止）…`, 'solving')
 
   for (let i = 0; i < plan.steps.length; i++) {
     if (token !== logicToken) break
@@ -411,8 +419,10 @@ async function runLogicSolver(): Promise<void> {
     const svg = currentSvg()
     if (svg) updateFlash(svg, metricsFor(session.puzzle), flashCell)
     setStatus(`[${i + 1}/${plan.steps.length}] ${step.reason}`, 'solving')
-    // 等一段特效时长，让弦振/光晕演完
-    if (!(await sleep(FX_ANIM_MS, token))) break
+    // 连拍加速：每推一步升一档，与填的是 \ 还是 / 无关，不重置
+    const streak = Math.min(i + 1, LOGIC_STREAK_MAX)
+    // 等一段特效时长让弦振/光晕演完；连拍越多间隔越短
+    if (!(await sleep(logicGapMs(streak), token))) break
     if (token !== logicToken) break
     flashCell = null
     setCells([{ index: step.cell, value: step.value }])
