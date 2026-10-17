@@ -797,6 +797,28 @@ function selectCustomVertex(px: number, py: number): void {
   btn?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
 }
 
+/** 按线性序号选顶点（夹在棋盘范围内）；配合 moveCustomCursor 实现行末自动换行 */
+function selectCustomVertexIndex(i: number): void {
+  const cols = customW + 1
+  const max = cols * (customH + 1)
+  if (max <= 0) return
+  const idx = Math.max(0, Math.min(max - 1, i))
+  selectCustomVertex(idx % cols, Math.floor(idx / cols))
+}
+
+/**
+ * 键盘光标相对移动（仿数回）：水平越界自动换行——
+ * 越过右边界折到下一行行首，越过左边界折到上一行行尾，仅在棋盘首尾格夹停；
+ * 垂直移动保持同一列、不换行。
+ */
+function moveCustomCursor(dx: number, dy: number): void {
+  const cols = customW + 1
+  const idx = customCursorY * cols + customCursorX
+  const row = Math.floor(idx / cols)
+  const col = idx % cols
+  selectCustomVertexIndex((row + dy) * cols + (col + dx))
+}
+
 function renderCustomGrid(): void {
   const grid = $('#custom-grid')
   grid.style.gridTemplateColumns = `repeat(${customW + 1}, 34px)`
@@ -974,45 +996,45 @@ window.addEventListener('keydown', (e) => {
 
   // —— 自定义题板键盘录入（编辑器打开时优先于全局快捷键）——
   if (customEditorOpen()) {
-    // 0–4 填数并右移一格
+    // 0–4 填数并右移一格（行末自动换行到下一行行首）
     if (k >= '0' && k <= '4') {
       e.preventDefault()
       setCustomClue(customCursorX, customCursorY, Number(k) as VertexNumber)
-      selectCustomVertex(customCursorX + 1, customCursorY)
+      moveCustomCursor(1, 0)
       return
     }
-    // . / 退格 / Delete / 空格 清空（退格左移，其余右移）
+    // . / 退格 / Delete / 空格 清空（退格左移，其余右移；越界自动换行）
     if (k === '.' || k === 'backspace' || k === 'delete' || k === ' ') {
       e.preventDefault()
       setCustomClue(customCursorX, customCursorY, null)
-      if (k === 'backspace') selectCustomVertex(customCursorX - 1, customCursorY)
-      else selectCustomVertex(customCursorX + 1, customCursorY)
+      if (k === 'backspace') moveCustomCursor(-1, 0)
+      else moveCustomCursor(1, 0)
       return
     }
     if (k === 'arrowleft') {
       e.preventDefault()
-      selectCustomVertex(customCursorX - 1, customCursorY)
+      moveCustomCursor(-1, 0)
       return
     }
     if (k === 'arrowright') {
       e.preventDefault()
-      selectCustomVertex(customCursorX + 1, customCursorY)
+      moveCustomCursor(1, 0)
       return
     }
     if (k === 'arrowup') {
       e.preventDefault()
-      selectCustomVertex(customCursorX, customCursorY - 1)
+      moveCustomCursor(0, -1)
       return
     }
     if (k === 'arrowdown') {
       e.preventDefault()
-      selectCustomVertex(customCursorX, customCursorY + 1)
+      moveCustomCursor(0, 1)
       return
     }
     if (k === 'enter' || k === 'tab') {
       e.preventDefault()
-      if (e.shiftKey) selectCustomVertex(customCursorX - 1, customCursorY)
-      else selectCustomVertex(customCursorX + 1, customCursorY)
+      if (e.shiftKey) moveCustomCursor(-1, 0)
+      else moveCustomCursor(1, 0)
       return
     }
     if (k === 'home') {
