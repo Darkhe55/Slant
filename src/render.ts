@@ -109,6 +109,9 @@ export function renderBoard(
     )
   }
 
+  // 染色层（逻辑解题回放时由 updateColoring 动态填充：按颜色类铺格底）
+  parts.push('<g class="coloring-layer" pointer-events="none"></g>')
+
   // 悬停层（由 updateHover 动态填充，避免整图重绘）
   parts.push('<g class="hover-layer"></g>')
 
@@ -186,6 +189,32 @@ export function updateHover(svg: SVGSVGElement, m: BoardMetrics, cell: number | 
   const layer = svg.querySelector('.hover-layer')
   if (!layer) return
   layer.innerHTML = hoverMarkup(m, cell)
+}
+
+/** 染色层内容：按颜色类给未定格铺底色（同类同色，类内两种朝向一深一浅） */
+export function coloringMarkup(
+  m: BoardMetrics,
+  marks: Array<{ cx: number; cy: number; fill: string }> | null,
+): string {
+  if (!marks || !marks.length) return ''
+  const inset = 1 * m.k
+  return marks
+    .map(
+      (mk) =>
+        `<rect class="cell-color" x="${m.pad + mk.cx * m.cell + inset}" y="${m.pad + mk.cy * m.cell + inset}" width="${m.cell - inset * 2}" height="${m.cell - inset * 2}" rx="${8 * m.k}" fill="${mk.fill}" fill-opacity="0.55" />`,
+    )
+    .join('\n')
+}
+
+/** 只更新染色层，不重建整张 SVG */
+export function updateColoring(
+  svg: SVGSVGElement,
+  m: BoardMetrics,
+  marks: Array<{ cx: number; cy: number; fill: string }> | null,
+): void {
+  const layer = svg.querySelector('.coloring-layer')
+  if (!layer) return
+  layer.innerHTML = coloringMarkup(m, marks)
 }
 
 /** 逻辑解题演示时「正在推理」的格子高亮 */

@@ -104,19 +104,21 @@ export interface ColoringResult {
   aborted: boolean
 }
 
-/**
- * 对当前盘面做朝向染色，并在主循环推不动时用枚举排除推出必然结论。
- * @param w     宽（格数）
- * @param h     高（格数）
- * @param clues 顶点数字，row-major，length = (w+1)*(h+1)
- * @param cells 当前盘面，row-major，length = w*h
- */
-export function enumerateColoredCells(
+interface ColoringBuild {
+  dsu: ParityDSU
+  /** 未定格线性索引（row-major） */
+  unknownIdx: number[]
+  /** 约束是否矛盾（奇环） */
+  conflict: boolean
+}
+
+/** 收集「恰一连」顶点约束并用带权并查集传播，返回着色结构 */
+function buildColoring(
   w: number,
   h: number,
   clues: VertexNumber[],
   cells: CellState[],
-): ColoringResult {
+): ColoringBuild {
   const total = w * h
   const dsu = new ParityDSU(total)
   let conflict = false
@@ -149,6 +151,24 @@ export function enumerateColoredCells(
   for (let i = 0; i < total; i++) {
     if (cells[i] === CS.Unknown) unknownIdx.push(i)
   }
+  return { dsu, unknownIdx, conflict }
+}
+
+/**
+ * 对当前盘面做朝向染色，并在主循环推不动时用枚举排除推出必然结论。
+ * @param w     宽（格数）
+ * @param h     高（格数）
+ * @param clues 顶点数字，row-major，length = (w+1)*(h+1)
+ * @param cells 当前盘面，row-major，length = w*h
+ */
+export function enumerateColoredCells(
+  w: number,
+  h: number,
+  clues: VertexNumber[],
+  cells: CellState[],
+): ColoringResult {
+  const total = w * h
+  const { dsu, unknownIdx, conflict } = buildColoring(w, h, clues, cells)
 
   // 约束矛盾或没有未定格 → 无线索
   if (conflict || unknownIdx.length === 0) {
@@ -216,4 +236,44 @@ export function enumerateColoredCells(
     }
   }
   return { forced, classes, assignments, validCount, aborted: false }
+}
+
+/* ———————————————————— 染色显示 ———————————————————— */
+
+/** 染色显示标记：一个未定格的底色矩形 */
+export interface ColoringMark {
+  cx: number
+  cy: number
+  /** hsl 底色 */
+  fill: string
+}
+
+/**
+ * 计算当前盘面的染色显示（逻辑解题回放时铺在格底，仿数回的色块显示）。
+ * 每个未定格按「颜色类 + 类内朝向位」取色：同类同色，类内两种朝向一深一浅，
+ * 直观呈现同/异色分组结构。约束矛盾或没有未定格时返回 null。
+ */
+export function coloringDisplayMarks(
+  w: number,
+  h: number,
+  clues: VertexNumber[],
+  cells: CellState[],
+): ColoringMark[] | null {
+  const { dsu, unknownIdx, conflict } = buildColoring(w, h, clues, cells)
+  if (conflict || unknownIdx.length === 0) return null
+
+  // 类编号：按行主序首个出现顺序分配，同一步内稳定
+  const classId = new Map<number, number>()
+  for (const i of unknownIdx) {
+    const r = dsu.find(i)
+    if (!classId.has(r)) classId.set(r, classId.size)
+  }
+
+  return unknownIdx.map((i) => {
+    const id = classId.get(dsu.find(i))!
+    const parity = dsu.colorBit(i)
+    const hue = (id * 47) % 360 // 近似黄金角扩散，拉开类间色相
+    const fill = parity === 0 ? `hsl(${hue}, 62%, 86%)` : `hsl(${hue}, 66%, 71%)`
+    return { cx: i % w, cy: Math.floor(i / w), fill }
+  })
 }

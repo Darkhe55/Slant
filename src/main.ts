@@ -13,10 +13,11 @@ import {
 } from './state'
 import { clueCount, puzzles } from './puzzles'
 import { loadSavedPuzzles, savePuzzleToLibrary } from './library'
-import { cellCenter, clientToViewBox, hitTestCell, metricsFor, renderBoard, updateFlash, updateHover } from './render'
+import { cellCenter, clientToViewBox, hitTestCell, metricsFor, renderBoard, updateColoring, updateFlash, updateHover } from './render'
 import { validate } from './validate'
 import { countSolutions } from './solver'
 import { planLogicSolve } from './logic'
+import { coloringDisplayMarks } from './coloring'
 import { isMuted, resumeAudio, setMuted } from './audio'
 import { FX_ANIM_MS, bumpStreak, fxNegative, fxPositive, resetStreak } from './fx'
 
@@ -221,6 +222,7 @@ function renderBoardOnly() {
       updateHover(svg, m, hoverCell)
     }
     if (flashCell !== null) updateFlash(svg, m, flashCell)
+    if (coloringMarks) updateColoring(svg, m, coloringMarks)
   }
 }
 
@@ -380,13 +382,26 @@ function setLogicButton(playing: boolean): void {
   $('#btn-logic').textContent = playing ? '停止演示' : '逻辑解题'
 }
 
+/** 逻辑解题回放时的染色层标记（null = 不显示；规则5 步骤播放时铺出颜色类分组） */
+let coloringMarks: Array<{ cx: number; cy: number; fill: string }> | null = null
+
+function setColoringLayer(marks: Array<{ cx: number; cy: number; fill: string }> | null): void {
+  coloringMarks = marks
+  const svg = currentSvg()
+  if (svg && session) updateColoring(svg, metricsFor(session.puzzle), marks)
+}
+
 function stopLogic(): void {
   logicToken++
   logicPlaying = false
   flashCell = null
+  coloringMarks = null
   setLogicButton(false)
   const svg = currentSvg()
-  if (svg && session) updateFlash(svg, metricsFor(session.puzzle), null)
+  if (svg && session) {
+    updateFlash(svg, metricsFor(session.puzzle), null)
+    updateColoring(svg, metricsFor(session.puzzle), null)
+  }
 }
 
 async function runLogicSolver(): Promise<void> {
@@ -424,6 +439,20 @@ async function runLogicSolver(): Promise<void> {
   for (let i = 0; i < plan.steps.length; i++) {
     if (token !== logicToken) break
     const step = plan.steps[i]!
+    // 染色枚举步：先把当前未定格的染色分组铺到格底（落子后按新局面重算）
+    const isColoring = step.reason.startsWith('规则5')
+    if (session) {
+      setColoringLayer(
+        isColoring
+          ? coloringDisplayMarks(
+              session.puzzle.width,
+              session.puzzle.height,
+              session.puzzle.clues,
+              session.state.cells,
+            )
+          : null,
+      )
+    }
     // 高亮正在推理的格子 + 状态栏说明理由
     flashCell = step.cell
     const svg = currentSvg()
@@ -436,6 +465,17 @@ async function runLogicSolver(): Promise<void> {
     if (token !== logicToken) break
     flashCell = null
     setCells([{ index: step.cell, value: step.value }])
+    // 落子后按新局面重算染色分组（随播放进度更新）
+    if (isColoring && session) {
+      setColoringLayer(
+        coloringDisplayMarks(
+          session.puzzle.width,
+          session.puzzle.height,
+          session.puzzle.clues,
+          session.state.cells,
+        ),
+      )
+    }
     // 落子特效：弦振抖动 + 光晕 + 拨弦音（连拍抬音高）
     playCellFx(step.cell, true)
   }
@@ -443,6 +483,7 @@ async function runLogicSolver(): Promise<void> {
   setButtonsDisabled(false)
   logicPlaying = false
   setLogicButton(false)
+  setColoringLayer(null)
   const result = validate(session.state, session.puzzle)
   if (result.solved) {
     setStatus(`逻辑解题完成：${plan.steps.length} 步推出全部格子，并通过校验。`, 'ok')
