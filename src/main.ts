@@ -105,8 +105,8 @@ app.innerHTML = `
       <div class="custom-editor" id="custom-editor" hidden>
         <h2>自定义题板</h2>
         <div class="custom-row">
-          <label>宽 <input id="custom-w" type="number" min="2" max="12" value="5" /></label>
-          <label>高 <input id="custom-h" type="number" min="2" max="12" value="5" /></label>
+          <label>宽 <input id="custom-w" type="number" min="2" max="60" value="5" /></label>
+          <label>高 <input id="custom-h" type="number" min="2" max="60" value="5" /></label>
           <button class="btn" id="custom-regen" type="button">生成网格</button>
         </div>
         <div class="custom-hint">点击顶点循环：空 → 0 → 1 → 2 → 3 → 4 → 空 ｜ 键盘：方向键移动，0–4 填数，. / 退格清空，Enter / Tab 下一格</div>
@@ -981,8 +981,8 @@ function renderCustomGrid(): void {
 }
 
 function readCustomSize(): void {
-  customW = Math.min(Math.max(Number($input('#custom-w').value) || 5, 2), 12)
-  customH = Math.min(Math.max(Number($input('#custom-h').value) || 5, 2), 12)
+  customW = Math.min(Math.max(Number($input('#custom-w').value) || 5, 2), 60)
+  customH = Math.min(Math.max(Number($input('#custom-h').value) || 5, 2), 60)
 }
 
 function regenCustomGrid(): void {
@@ -1020,8 +1020,8 @@ function editCustomPuzzle(puzzle: Puzzle): void {
   const clues = (puzzle as Puzzle & { clues?: VertexNumber[] }).clues
   const size = (puzzle.width + 1) * (puzzle.height + 1)
   if (!Array.isArray(clues) || clues.length !== size) return
-  if (puzzle.width > 12 || puzzle.height > 12) {
-    setStatus(`题面超过最大尺寸 12×12。`, 'bad')
+  if (puzzle.width > 60 || puzzle.height > 60) {
+    setStatus(`题面超过最大尺寸 60×60。`, 'bad')
     return
   }
   customW = puzzle.width
