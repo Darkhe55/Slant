@@ -140,6 +140,50 @@ body {
   font-size: 12px;
 }
 
+.puzzle-row {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.puzzle-row .puzzle-item {
+  flex: 1;
+  min-width: 0;
+}
+
+.puzzle-act {
+  appearance: none;
+  flex: none;
+  min-width: 38px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fbf8f1;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.puzzle-act:hover {
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+
+.puzzle-act.danger:hover {
+  border-color: var(--error);
+  color: var(--error);
+}
+
+.puzzle-act.danger.confirm {
+  border-color: var(--error);
+  background: var(--error-soft);
+  color: var(--error);
+  font-weight: 600;
+}
+
 .toolbar {
   display: flex;
   flex-wrap: wrap;

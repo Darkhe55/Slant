@@ -81,3 +81,9 @@ export function savePuzzleToLibrary(p: Puzzle): SavedPuzzle[] {
   persistSavedPuzzles(list)
   return list
 }
+
+export function removeSavedPuzzle(id: string): SavedPuzzle[] {
+  const list = loadSavedPuzzles().filter((p) => p.id !== id)
+  persistSavedPuzzles(list)
+  return list
+}
