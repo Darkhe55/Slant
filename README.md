@@ -41,6 +41,7 @@ npm run dev
 - **音效特效**：Web Audio 合成拨弦、水滴与落子动画，无外部音频资源
 - **缩放/平移**：滚轮缩放，中键或 `Shift` 拖拽平移
 - **自定义题板**：摆放顶点数字，支持键盘录入（方向键移动，0–4 填数，`.`/退格清空）；保存到题库后可编辑或删除
+- **图片识图导入**：自动识别题图的网格与顶点数字（支持到 50×50），校验唯一解后追加到题库
 - **逻辑推理**：顶点饱和度、环路规避、相邻数字额度推导与朝向染色枚举
 
 ## 技术栈
@@ -67,6 +68,8 @@ src/
   audio.ts
   fx.ts
   styles.css
+scripts/
+  import-image.mjs   图片识图导入题库（npm run import-image）
 ```
 
 ## 命令
@@ -75,32 +78,53 @@ src/
 npm run dev       # 开发服务（127.0.0.1:5174）
 npm run build     # tsc --noEmit + vite build
 npm run gen       # 重新生成题库
-npm run check     # 审计题库
+npm run check     # 审计题库（含识图导入题）
 npm run logic-test # 逻辑引擎自检
+npm run import-image -- <图片> [--append] [--verify]  # 图片识图导入题库
 ```
 
 ## 图片识图导入
 
+`scripts/import-image.mjs` 用 Playwright + Edge 把题图（网格线 + 顶点数字）识别成题库条目，默认只预览，加 `--append` 才写入 `src/puzzles-data.ts`。
+
 ```bash
-# 预览：识别网格与顶点数字，不写入题库
+# 预览：识别网格与顶点数字（会求解并显示参考解），不写入题库
 npm run import-image -- 题图.png
 
-# 识别并追加到题库（会写入参考解）
-npm run import-image -- 题图.png --append --name "识图 · 7×7" --verify
+# 只识别数字、不求解不写入（最快，用于核对 0–4 与数字个数）
+npm run import-image -- 题图.png --dry
+
+# 识别并追加到题库（写参考解 + 唯一解校验；支持 50×50 大棋盘）
+npm run import-image -- 题图.png --append --verify --name "识图 · 7×7"
+
+# 数字簇/单点人工修正后写入
+npm run import-image -- 题图.png --map 3=4 --clue 12,7=0 --append
+
+# 导出识别结果 JSON
+npm run import-image -- 题图.png --json output/import.json
 ```
 
 | 参数 | 说明 |
 |------|------|
-| `--name 名称` / `--id ID` / `--series 系列` | 题库条目信息 |
-| `--append` | 写入 `src/puzzles-data.ts` |
+| `--name 名称` / `--id ID` / `--series 系列` | 题库条目信息（默认 id 自动生成、series=识图） |
+| `--append` | 写入 `src/puzzles-data.ts`（不加则只预览） |
 | `--verify` | 额外校验唯一解（超时只警告） |
-| `--map 簇号=数字` | 数字 OCR 识别簇人工修正，如 `--map 2=1` |
-| `--width W --height H` | 网格线识别失败时手动指定棋盘格数 |
-| `--budget N` | 求解节点上限 |
 | `--dry` | 只识别并打印顶点数字，不求解、不写入 |
+| `--map 簇号=数字` | 数字簇整体人工修正，如 `--map 2=1` |
+| `--clue x,y=数字` | 单个顶点人工修正（坐标 0 基，范围 0..W × 0..H） |
+| `--width W --height H` | 网格线识别失败或漏线时手动指定棋盘格数 |
+| `--budget N` / `--timeout 秒` | 求解节点上限 / 求解与唯一性校验时间上限（超时只警告） |
+| `--json out.json` | 导出识别结果（尺寸、clues、参考解、是否唯一） |
 
-- 识别原理：浅灰网格线投影定位棋盘与顶点 → 每个顶点附近裁切、连通域切字 → 0..4 数字模板 IoU 匹配（无字形 = 无数字）。
-- 校验：用 esbuild 现场打包 `src/solver.ts`，检查有解 / 唯一解；导入时把求出的参考解写入题库。
-- 数字识别支持 `--map` 人工覆盖；棋盘网格缺失或漏线时可用 `--width/--height` 指定尺寸。
-- `npm run gen` 会覆盖 `puzzles-data.ts` 中的导入内容。
+识别原理：用「浅灰网格线」投影定位棋盘与顶点 → 每个顶点附近裁切、深色连通域切字 → 先按结构特征（底横、竖干、镂空、上下对称度）判定 0–4，再用内置多字体模板交叉校验 → 相同字形聚成簇、按簇投票，避免单字形抗锯齿误判。识别簇可用 `--map` 覆盖，单个顶点可用 `--clue` 覆盖。
+
+### 限制与注意事项
+
+- 只识别「浅灰网格线 + 深色印刷体数字 0–4」的题图；无数字即空顶点。手写、旋转、透视、低分辨率或重压缩图容易失败。
+- 依赖完整格线：缺线/截图白边/线宽异常时用 `--width/--height`（必要时先 `--crop` 裁图或手动裁图）。
+- 识别结果先看预览输出的 (W+1)×(H+1) 数字网格与「数字 N 个」再决定是否 `--append`；个别误判用 `--map` / `--clue` 修正。
+- 求解：棋盘超过 400 格自动启用深度探测（probe），50×50 约 2 秒出解；唯一性校验耗时随尺寸增长，超时只警告，不会阻塞写入。
+- `--append` 直接改 `src/puzzles-data.ts`：**`npm run gen` 会重新生成该文件并覆盖导入条目**；重复 append 会产生重复条目，需要手动删除。
+- 若识别结果无解或求解/校验超时，导入条目的 `solution` 会留空：游戏中「提示 / 显示解」不可用（会提示没有参考解），但题面仍可手动玩；`npm run check` 对 >400 格棋盘同样会自动开启探测。
+
 

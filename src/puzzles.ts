@@ -6,7 +6,9 @@ function parseClues(s: string): VertexNumber[] {
   return [...s].map((ch) => (ch === '.' ? null : (Number(ch) as 0 | 1 | 2 | 3 | 4)))
 }
 
-function parseSolution(s: string): CellState[] {
+/** 解析参考解；导入题可能没有参考解（undefined / 空串），此时返回 undefined */
+function parseSolution(s: string | undefined): CellState[] | undefined {
+  if (typeof s !== 'string' || !s) return undefined
   return [...s].map((ch) => (ch === '\\' ? CS.Backslash : CS.Slash))
 }
 

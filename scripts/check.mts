@@ -40,9 +40,11 @@ for (const p of puzzles) {
   const v = validate(st, p)
   bad ||= failIf(!v.solved, `参考解不合法：${JSON.stringify(v.badVertices)} loop=${v.hasLoop}`)
 
-  const r = countSolutions(p, 2, { maxNodes: 4_000_000, timeBudgetMs: 60_000 })
+  // 大棋盘（如识图导入的 50×50）需开启深度探测，否则纯回溯唯一性校验会超时
+  const r = countSolutions(p, 2, { maxNodes: 4_000_000, timeBudgetMs: 60_000, probe: w * h > 400 })
   bad ||= failIf(r.timedOut, '唯一解校验超时')
   bad ||= failIf(r.count !== 1, `解数 = ${r.count}（应为 1）`)
+  if (bad) continue
 
   const clueNum = p.clues.filter((c) => c !== null).length
   console.log(`  ✓ 参考解合法 · 唯一解 · ${clueNum}/${vCount} 个数字 (${((clueNum / vCount) * 100).toFixed(0)}%)`)

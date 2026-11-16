@@ -8,8 +8,8 @@ export type RawPuzzle = {
   series: string
   /** 顶点数字串：'.' = 无数字，'0'-'4'；length = (W+1)*(H+1)，row-major */
   clues: string
-  /** 参考解：'\\' = 反斜杠，'/' = 斜杠；length = W*H，row-major */
-  solution: string
+  /** 参考解：'\\' = 反斜杠，'/' = 斜杠；length = W*H，row-major（图片导入题可能没有） */
+  solution?: string
 }
 
 export const RAW_PUZZLES: RawPuzzle[] = [
