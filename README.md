@@ -78,3 +78,29 @@ npm run gen       # 重新生成题库
 npm run check     # 审计题库
 npm run logic-test # 逻辑引擎自检
 ```
+
+## 图片识图导入
+
+```bash
+# 预览：识别网格与顶点数字，不写入题库
+npm run import-image -- 题图.png
+
+# 识别并追加到题库（会写入参考解）
+npm run import-image -- 题图.png --append --name "识图 · 7×7" --verify
+```
+
+| 参数 | 说明 |
+|------|------|
+| `--name 名称` / `--id ID` / `--series 系列` | 题库条目信息 |
+| `--append` | 写入 `src/puzzles-data.ts` |
+| `--verify` | 额外校验唯一解（超时只警告） |
+| `--map 簇号=数字` | 数字 OCR 识别簇人工修正，如 `--map 2=1` |
+| `--width W --height H` | 网格线识别失败时手动指定棋盘格数 |
+| `--budget N` | 求解节点上限 |
+| `--dry` | 只识别并打印顶点数字，不求解、不写入 |
+
+- 识别原理：浅灰网格线投影定位棋盘与顶点 → 每个顶点附近裁切、连通域切字 → 0..4 数字模板 IoU 匹配（无字形 = 无数字）。
+- 校验：用 esbuild 现场打包 `src/solver.ts`，检查有解 / 唯一解；导入时把求出的参考解写入题库。
+- 数字识别支持 `--map` 人工覆盖；棋盘网格缺失或漏线时可用 `--width/--height` 指定尺寸。
+- `npm run gen` 会覆盖 `puzzles-data.ts` 中的导入内容。
+
