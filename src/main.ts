@@ -792,6 +792,7 @@ function bindBoard(): void {
     'wheel',
     (e) => {
       e.preventDefault()
+        e.stopPropagation()
       const svg = currentSvg()
       if (!svg || !session) return
       const vb = clientToViewBox(svg, e.clientX, e.clientY)
