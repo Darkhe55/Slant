@@ -527,7 +527,7 @@ async function runLogicSolver(): Promise<void> {
     if (token !== logicToken) break
     const step = plan.steps[i]!
     // 染色枚举步：先把当前未定格的染色分组铺到格底（落子后按新局面重算）
-    const isColoring = step.reason.startsWith('规则5')
+    const isColoring = step.reason.startsWith('规则7')
     if (session) {
       setColoringLayer(
         isColoring

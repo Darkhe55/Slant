@@ -25,6 +25,18 @@
  *     - 证明：若非公共格避开 V，V 要达到 3 就得让其余三格全连 → 两个公共格都连 V
  *       → 都避开 Q → Q 最多 2 < 3，矛盾
  *
+ *   规则 5 · 相邻数字对额度精确化（ruleAdjacentQuota）
+ *     - 恒等式 a+b = N1+N2−g（g = 公共格数），把两侧额度分开联立，
+ *       推出「一侧额度被唯一确定 → 该侧剩余格全相背/全相连」的中间情形
+ *       （规则 3/4 只覆盖两侧总额度的两个极端）
+ *
+ *   规则 6 · 单格二选一 + 链传播（主循环推不动时启用）
+ *     - 对每个未定格分别假设 \ /，用规则 1-5 链式传播到不动点：
+ *       某一向推出局部矛盾 → 只能填另一向（有界一步前瞻，结论可证明）
+ *
+ *   规则 7 · 朝向染色枚举（最后的搜索兜底）
+ *     - 同/异色约束传播 + 按类枚举，用「顶点数字全对 + 不成环」排除非法填法
+ *
  * 关于「一条直线上除了两端点外都是 2 ⟹ 两端点连通」：
  *   这条**不成立**，不能当规则用。反例（4×4，主对角线上 (1,1)(2,2) 都是 2，
  *   其余无数字）存在完整合法解使 (0,0) 与 (3,3) 分属两条链：
@@ -35,8 +47,7 @@
  *   若要实现「2 链连通性」，需要做全图连通分量跟踪 + 假设推演，不是单条局部规则。
  *
  * 待实现（往 RULES 里加即可）：
- *   5. 单格二选一 + 传播：假设某格填 A，跑一遍规则 1-4 不动点，出现矛盾则填 B
- *   6. 全图连通分量跟踪（配合规则 2 做跨单元格的环路预判）
+ *   8. 全图连通分量跟踪（配合规则 2 做跨单元格的环路预判）
  */
 import { cellIndex, clueIndex, vertexIncidents } from './state'
 import { cellEdgeEndpoints } from './validate'
@@ -378,6 +389,123 @@ const ruleAdjacentPair: RuleFn = (ctx) => {
   return steps
 }
 
+/* ———————————————————— 规则 5：相邻数字对额度精确化 ———————————————————— */
+
+/**
+ * 规则 5 · 相邻数字对额度精确化（规则 3/4 的严格推广，纯局部定额推导）。
+ *
+ * 对正交相邻的顶点 V（数字 N1）、Q（数字 N2）：
+ *   g   = 两顶点公共格数（每个公共格的对角线恰连向 V/Q 之一 → 总共为两数之和贡献 g 条）
+ *   nv  = 只挨着 V 的格数，nq = 只挨着 Q 的格数
+ *   a   = 非公共格中连向 V 的条数（a ≤ nv），b 同理（b ≤ nq）
+ * 恒等式（每个公共格必贡献 1，每个非公共格至多贡献 1）：
+ *   N1 + N2 = g + a + b        ⇔  a + b = T := N1 + N2 - g
+ * 记已知 aK / 未定 aU（b 同理），则 a ∈ [aK, aK+aU]，b ∈ [bK, bK+bU]，联立 a+b=T 得
+ *   a ∈ [max(aK, T-(bK+bU)), min(aK+aU, T-bK)]
+ * 区间为空 ⇒ 当前盘面已矛盾；区间退化为单点或贴到边界时即可落子：
+ *   a 必须等于 aK        → V 侧剩余非公共格全相背；
+ *   a 必须等于 aK+aU     → V 侧剩余非公共格全相连（b 侧对称）。
+ *
+ * 与规则 3/4 的关系：规则 3/4 只用了「a+b=T」的两个极端（aK+bK ≥ T / 已相背吃光余量）；
+ * 本规则把两侧额度分开看，额外覆盖「一侧已定、另一侧额度被唯一确定」与
+ * 「公共格全定后两侧额度各自唯一」等中间情形。
+ */
+const ruleAdjacentQuota: RuleFn = (ctx) => {
+  const steps: LogicStep[] = []
+  const w = ctx.w
+  const h = ctx.h
+
+  for (let py = 0; py <= h; py++) {
+    for (let px = 0; px <= w; px++) {
+      const n1 = ctx.clues[clueIndex(w, px, py)]
+      if (n1 === null || n1 === undefined) continue
+
+      for (const [qx, qy] of [
+        [px + 1, py],
+        [px, py + 1],
+      ] as const) {
+        if (qx > w || qy > h) continue
+        const n2 = ctx.clues[clueIndex(w, qx, qy)]
+        if (n2 === null || n2 === undefined) continue
+
+        const { g, nonCommon } = pairCells(w, h, px, py, qx, qy)
+        if (!nonCommon.length) continue
+
+        // 按所属顶点把非公共格分成 V 侧 / Q 侧
+        let aK = 0
+        let bK = 0
+        const pendingV: Array<{ cx: number; cy: number; touch: CellState }> = []
+        const pendingQ: Array<{ cx: number; cy: number; touch: CellState }> = []
+        for (const [cx, cy, vx, vy] of nonCommon) {
+          const touch = touchingDir(cx, cy, vx, vy)
+          const v = at(ctx, cx, cy)
+          const isV = vx === px && vy === py
+          if (v === touch) {
+            if (isV) aK++
+            else bK++
+          } else if (v === CS.Unknown) {
+            if (isV) pendingV.push({ cx, cy, touch })
+            else pendingQ.push({ cx, cy, touch })
+          }
+          // 相背格对额度没有贡献
+        }
+
+        const aU = pendingV.length
+        const bU = pendingQ.length
+        if (!aU && !bU) continue
+
+        const T = n1 + n2 - g
+        const label = `顶点 (${px},${py}) 与 (${qx},${qy}) 是相邻的 ${n1} 和 ${n2}`
+
+        // a + b = T，两侧额度联立；区间为空 = 盘面矛盾
+        const aLo = Math.max(aK, T - (bK + bU))
+        const aHi = Math.min(aK + aU, T - bK)
+        if (aLo > aHi) {
+          ctx.conflicts.push(
+            `${label}：非公共格连向 V 的条数无解（需 ${T} = a+b，a∈[${aK},${aK + aU}]，b∈[${bK},${bK + bU}]）`,
+          )
+          continue
+        }
+        if (aU && aHi === aK) {
+          const head = `规则5 · ${label}：总额度 ${T}，V 侧已连 ${aK} 条且剩余额度为 0，V 侧剩余 ${aU} 格必须相背`
+          for (const p of pendingV) {
+            const value = other(p.touch)
+            steps.push(put(ctx, p.cx, p.cy, value, `${head} → 填 ${sym(value)}`))
+          }
+        } else if (aU && aLo === aK + aU) {
+          const head = `规则5 · ${label}：总额度 ${T}，V 侧剩余 ${aU} 格必须全部相连（否则凑不够）`
+          for (const p of pendingV) {
+            steps.push(put(ctx, p.cx, p.cy, p.touch, `${head} → 填 ${sym(p.touch)}`))
+          }
+        }
+
+        const bLo = Math.max(bK, T - (aK + aU))
+        const bHi = Math.min(bK + bU, T - aK)
+        if (bLo > bHi) {
+          ctx.conflicts.push(
+            `${label}：非公共格连向 Q 的条数无解（需 ${T} = a+b，a∈[${aK},${aK + aU}]，b∈[${bK},${bK + bU}]）`,
+          )
+          continue
+        }
+        if (bU && bHi === bK) {
+          const head = `规则5 · ${label}：总额度 ${T}，Q 侧已连 ${bK} 条且剩余额度为 0，Q 侧剩余 ${bU} 格必须相背`
+          for (const p of pendingQ) {
+            const value = other(p.touch)
+            steps.push(put(ctx, p.cx, p.cy, value, `${head} → 填 ${sym(value)}`))
+          }
+        } else if (bU && bLo === bK + bU) {
+          const head = `规则5 · ${label}：总额度 ${T}，Q 侧剩余 ${bU} 格必须全部相连（否则凑不够）`
+          for (const p of pendingQ) {
+            steps.push(put(ctx, p.cx, p.cy, p.touch, `${head} → 填 ${sym(p.touch)}`))
+          }
+        }
+      }
+    }
+  }
+
+  return steps
+}
+
 /* ———————————————————— 规则表 ———————————————————— */
 
 export const RULES: RuleMeta[] = [
@@ -396,6 +524,11 @@ export const RULES: RuleMeta[] = [
     name: '相邻数字对：非公共格额度推导（已连+公共格 ≥ 两数之和 → 其余相背；相背吃光余量 → 其余相连）',
     fn: ruleAdjacentPair,
   },
+  {
+    id: 'r5-adjacent-quota',
+    name: '相邻数字对额度精确化：a+b = 两数之和−公共格数，两侧额度联立后单独定 V/Q 剩余格',
+    fn: ruleAdjacentQuota,
+  },
 ]
 
 /* ———————————————————— 主循环 ———————————————————— */
@@ -413,10 +546,137 @@ function initialCells(puzzle: Puzzle, start?: GameState | CellState[]): CellStat
   return empty()
 }
 
-/* ———————————————————— 规则 5：染色枚举（主循环推不动时启用） ———————————————————— */
+/* ———————————————————— 规则 6：单格二选一 + 链传播（主循环推不动时启用） ———————————————————— */
+
+/** 局部可行性：任一顶点/相邻数字对的额度已无法满足 → 一定是矛盾盘面 */
+function localFeasible(ctx: RuleCtx): boolean {
+  // 顶点：已连 ≤ 数字 ≤ 已连 + 未定
+  for (let py = 0; py <= ctx.h; py++) {
+    for (let px = 0; px <= ctx.w; px++) {
+      const n = ctx.clues[clueIndex(ctx.w, px, py)]
+      if (n === null || n === undefined) continue
+      let conn = 0
+      let unk = 0
+      for (const inc of vertexIncidents(ctx.w, ctx.h, px, py)) {
+        const v = at(ctx, inc.cx, inc.cy)
+        if (v === CS.Unknown) unk++
+        else if (v === inc.dir) conn++
+      }
+      if (conn > n || conn + unk < n) return false
+    }
+  }
+  // 相邻数字对：a + b = N1 + N2 − g 的可行区间为空
+  for (let py = 0; py <= ctx.h; py++) {
+    for (let px = 0; px <= ctx.w; px++) {
+      const n1 = ctx.clues[clueIndex(ctx.w, px, py)]
+      if (n1 === null || n1 === undefined) continue
+      for (const [qx, qy] of [
+        [px + 1, py],
+        [px, py + 1],
+      ] as const) {
+        if (qx > ctx.w || qy > ctx.h) continue
+        const n2 = ctx.clues[clueIndex(ctx.w, qx, qy)]
+        if (n2 === null || n2 === undefined) continue
+        const { g, nonCommon } = pairCells(ctx.w, ctx.h, px, py, qx, qy)
+        if (!nonCommon.length) continue
+        let aK = 0
+        let aU = 0
+        let bK = 0
+        let bU = 0
+        for (const [cx, cy, vx, vy] of nonCommon) {
+          const touch = touchingDir(cx, cy, vx, vy)
+          const v = at(ctx, cx, cy)
+          const isV = vx === px && vy === py
+          if (v === touch) {
+            if (isV) aK++
+            else bK++
+          } else if (v === CS.Unknown) {
+            if (isV) aU++
+            else bU++
+          }
+        }
+        const T = n1 + n2 - g
+        if (Math.max(aK, T - (bK + bU)) > Math.min(aK + aU, T - bK)) return false
+      }
+    }
+  }
+  return true
+}
+
+/** 复制一个只读工作副本，供二选一探测使用 */
+function probeCopy(ctx: RuleCtx): RuleCtx {
+  return { w: ctx.w, h: ctx.h, clues: ctx.clues, cells: ctx.cells.slice(), conflicts: [] }
+}
 
 /**
- * 规则 5 · 朝向染色枚举（仿数回色块染色）：
+ * 在副本上把规则 1-5 跑到不动点。
+ * 返回 false 表示该假设与局部规则矛盾（假设不成立）。
+ * 只用局部规则（顶点饱和度 / 相邻数字对额度 / 环路规避），不做全局搜索，
+ * 因此「假设 A 局部矛盾 ⇒ 实际必为 B」是可证明的。
+ */
+function propagateLocal(ctx: RuleCtx): boolean {
+  for (let round = 0; round < 400; round++) {
+    if (!localFeasible(ctx)) return false
+    let changed = false
+    for (const rule of RULES) {
+      if (rule.fn(ctx).length) changed = true
+      if (ctx.conflicts.length) return false
+    }
+    if (!changed) return true
+  }
+  return true
+}
+
+/**
+ * 规则 6 · 单格二选一 + 链传播（「斜线链传播」）：
+ * 对每个未定格分别假设填 \ / ，用规则 1-5 链式传播到不动点：
+ *   - 某一向推出局部矛盾 → 只能填另一向（结论可证明，只是一步有界前瞻）；
+ *   - 两向都矛盾 → 直接报盘面无解。
+ * 每个结论都只依赖有界的局部传播，不枚举整盘填法。
+ */
+function ruleChainProbe(ctx: RuleCtx): LogicStep[] {
+  const steps: LogicStep[] = []
+  const t0 = Date.now()
+  const budget = 1500
+  for (let cy = 0; cy < ctx.h; cy++) {
+    for (let cx = 0; cx < ctx.w; cx++) {
+      const i = cellIndex(ctx.w, cx, cy)
+      if (ctx.cells[i] !== CS.Unknown) continue
+      if (Date.now() - t0 > budget) return steps
+
+      const feasible: CellState[] = []
+      for (const dir of [CS.Backslash, CS.Slash] as const) {
+        const probe = probeCopy(ctx)
+        probe.cells[i] = dir
+        if (propagateLocal(probe)) feasible.push(dir)
+      }
+
+      if (feasible.length === 0) {
+        ctx.conflicts.push(`格子 (${cx},${cy}) 两种朝向都会推出局部矛盾，此题无解`)
+        return steps
+      }
+      if (feasible.length === 1) {
+        const value = feasible[0]!
+        const banned = other(value)
+        steps.push(
+          put(
+            ctx,
+            cx,
+            cy,
+            value,
+            `规则6 · 格子 (${cx},${cy}) 假设填 ${sym(banned)} 会被规则 1-5 链式传播推出矛盾 → 只能填 ${sym(value)}`,
+          ),
+        )
+      }
+    }
+  }
+  return steps
+}
+
+/* ———————————————————— 规则 7：染色枚举（最后的搜索兜底） ———————————————————— */
+
+/**
+ * 规则 7 · 朝向染色枚举（仿数回色块染色）：
  * 剩余未定格按「同/异色」约束（同一顶点恰一连的相邻格 → 同色，对角格 → 异色）
  * 用带权并查集传播，再按颜色类枚举整体朝向，用「顶点数字全对 + 不成环」排除非法填法；
  * 全部合法填法中取值一致的格子即为必然结论。
@@ -424,7 +684,7 @@ function initialCells(puzzle: Puzzle, start?: GameState | CellState[]): CellStat
 function ruleColoringEnumerate(ctx: RuleCtx): LogicStep[] {
   const r = enumerateColoredCells(ctx.w, ctx.h, ctx.clues, ctx.cells)
   if (r.aborted || !r.forced.length) return []
-  const head = `规则5 · 染色枚举：剩余格分属 ${r.classes} 个同/异色类，${r.assignments} 种填法中 ${r.validCount} 种通过「数字全对 + 不成环」校验`
+  const head = `规则7 · 染色枚举：剩余格分属 ${r.classes} 个同/异色类，${r.assignments} 种填法中 ${r.validCount} 种通过「数字全对 + 不成环」校验`
   return r.forced.map((f) =>
     put(
       ctx,
@@ -473,7 +733,15 @@ export function planLogicSolve(puzzle: Puzzle, start?: GameState | CellState[]):
       }
       if (ctx.conflicts.length) break
     }
-    // 规则 1-4 推不动 → 染色枚举（带权并查集传播 + 按类枚举 + 成环/数字校验排除）
+    // 规则 1-5 推不动 → 单格二选一 + 链传播（有界局部前瞻）
+    if (!progress && !ctx.conflicts.length) {
+      const produced = ruleChainProbe(ctx)
+      if (produced.length) {
+        steps.push(...produced)
+        progress = true
+      }
+    }
+    // 仍然推不动 → 染色枚举（最后的全局搜索兜底）
     if (!progress && !ctx.conflicts.length) {
       const produced = ruleColoringEnumerate(ctx)
       if (produced.length) {
